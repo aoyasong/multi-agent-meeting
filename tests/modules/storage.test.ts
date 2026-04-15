@@ -120,4 +120,48 @@ describe('Meeting storage module', () => {
     expect(result.total).toBe(0);
     expect(result.meetings).toEqual([]);
   });
+
+  it('should keep metadata.json valid under concurrent writes', async () => {
+    const meeting = createMeetingFixture({
+      id: 'meeting_storage_concurrent_write',
+      theme: '并发写测试',
+    });
+
+    await Promise.all(
+      Array.from({ length: 30 }, (_, i) => {
+        const mutated = {
+          ...meeting,
+          theme: `并发写测试-${i}`,
+          metadata: {
+            ...meeting.metadata,
+            user_id: `user_${i}`,
+          },
+        };
+        return saveMeeting(mutated);
+      })
+    );
+
+    const filePath = path.join(getMeetingDir(meeting.id), 'metadata.json');
+    const content = await fs.readFile(filePath, 'utf-8');
+    expect(() => JSON.parse(content)).not.toThrow();
+
+    const loaded = await loadMeeting(meeting.id);
+    expect(loaded.id).toBe(meeting.id);
+  });
+
+  it('should keep index.json valid under concurrent index updates', async () => {
+    const items = Array.from({ length: 20 }, (_, i) =>
+      createMeetingFixture({
+        id: `meeting_index_concurrent_${i}`,
+        theme: `并发索引-${i}`,
+      })
+    );
+
+    await Promise.all(items.map(item => saveMeeting(item)));
+    await Promise.all(items.map(item => updateMeetingIndex(item.id, item)));
+
+    const list = await listMeetings();
+    expect(list.total).toBeGreaterThanOrEqual(20);
+    expect(list.meetings.some(item => item.id === 'meeting_index_concurrent_0')).toBe(true);
+  });
 });

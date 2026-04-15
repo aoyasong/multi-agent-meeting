@@ -13,6 +13,40 @@ import type { Meeting } from '../../types/index.js';
  * 默认存储目录
  */
 const DEFAULT_STORAGE_DIR = path.join(os.homedir(), '.openclaw', 'meetings');
+const fileMutexMap = new Map<string, Promise<void>>();
+
+async function withFileMutex<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+  const previous = fileMutexMap.get(filePath) ?? Promise.resolve();
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  fileMutexMap.set(filePath, previous.then(() => gate, () => gate));
+
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release?.();
+  }
+}
+
+async function atomicWriteFile(filePath: string, content: string): Promise<void> {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${randomPart}.tmp`;
+
+  try {
+    await fs.writeFile(tempPath, content, 'utf-8');
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    try {
+      await fs.rm(tempPath, { force: true });
+    } catch {
+      // 忽略临时文件清理失败
+    }
+    throw error;
+  }
+}
 
 /**
  * 获取存储目录路径
@@ -53,7 +87,9 @@ export async function saveMeeting(meeting: Meeting): Promise<void> {
   await fs.mkdir(meetingDir, { recursive: true });
   
   const filePath = getMeetingFilePath(meeting.id);
-  await fs.writeFile(filePath, JSON.stringify(meeting, null, 2), 'utf-8');
+  await withFileMutex(filePath, async () => {
+    await atomicWriteFile(filePath, JSON.stringify(meeting, null, 2));
+  });
 }
 
 /**
@@ -122,44 +158,46 @@ export async function updateMeetingIndex(meetingId: string, meeting: Meeting): P
   await ensureStorageDir();
   
   const indexPath = getIndexPath();
-  let index: MeetingIndexItem[] = [];
-  
-  try {
-    const content = await fs.readFile(indexPath, 'utf-8');
-    index = JSON.parse(content);
-  } catch {
-    // 索引文件不存在，使用空数组
-  }
-  
-  // 查找现有条目
-  const existingIndex = index.findIndex(item => item.id === meetingId);
-  
-  const indexItem: MeetingIndexItem = {
-    id: meeting.id,
-    theme: meeting.theme,
-    type: meeting.type,
-    status: meeting.status,
-    created_at: meeting.timing.created_at,
-  };
-  
-  // 可选字段只在有值时添加
-  if (meeting.timing.started_at) {
-    indexItem.started_at = meeting.timing.started_at;
-  }
-  if (meeting.timing.ended_at) {
-    indexItem.ended_at = meeting.timing.ended_at;
-  }
-  
-  if (existingIndex >= 0) {
-    index[existingIndex] = indexItem;
-  } else {
-    index.push(indexItem);
-  }
-  
-  // 按创建时间倒序排列
-  index.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  
-  await fs.writeFile(indexPath, JSON.stringify(index, null, 2), 'utf-8');
+  await withFileMutex(indexPath, async () => {
+    let index: MeetingIndexItem[] = [];
+    
+    try {
+      const content = await fs.readFile(indexPath, 'utf-8');
+      index = JSON.parse(content);
+    } catch {
+      // 索引文件不存在，使用空数组
+    }
+    
+    // 查找现有条目
+    const existingIndex = index.findIndex(item => item.id === meetingId);
+    
+    const indexItem: MeetingIndexItem = {
+      id: meeting.id,
+      theme: meeting.theme,
+      type: meeting.type,
+      status: meeting.status,
+      created_at: meeting.timing.created_at,
+    };
+    
+    // 可选字段只在有值时添加
+    if (meeting.timing.started_at) {
+      indexItem.started_at = meeting.timing.started_at;
+    }
+    if (meeting.timing.ended_at) {
+      indexItem.ended_at = meeting.timing.ended_at;
+    }
+    
+    if (existingIndex >= 0) {
+      index[existingIndex] = indexItem;
+    } else {
+      index.push(indexItem);
+    }
+    
+    // 按创建时间倒序排列
+    index.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    
+    await atomicWriteFile(indexPath, JSON.stringify(index, null, 2));
+  });
 }
 
 /**
