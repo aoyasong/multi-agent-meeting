@@ -45,6 +45,15 @@ export function createMeetingStartTool(_api: OpenClawPluginApi) {
             current_status: meeting.status,
           });
         }
+
+        if (!meeting.metadata.agenda_confirmed) {
+          return jsonResult({
+            error: true,
+            message: 'Agenda must be confirmed before meeting_start',
+            meeting_id: meetingId,
+            agenda_confirmed: false,
+          });
+        }
         
         // 更新状态
         const now = new Date().toISOString();

@@ -10,7 +10,7 @@ OpenClaw 是一个自托管的 AI Gateway，可以把多个聊天渠道（如 Wh
 
 - Plugin ID: `multi-agent-meeting-plugin`
 - Plugin Name: `Multi-Agent Meeting Plugin`
-- Tools: `28` 个
+- Tools: `32` 个
 - Commands: `5` 个
 
 ## 2. 能力总览
@@ -23,9 +23,13 @@ OpenClaw 是一个自托管的 AI Gateway，可以把多个聊天渠道（如 Wh
 - `meeting_get`
 - `meeting_list`
 
-### 2.2 议程管理（3）
+### 2.2 议程管理（7）
 
 - `agenda_add_item`
+- `agenda_update_item`
+- `agenda_remove_item`
+- `agenda_reorder_items`
+- `agenda_confirm`
 - `agenda_list_items`
 - `agenda_next_item`
 
@@ -85,7 +89,7 @@ OpenClaw 是一个自托管的 AI Gateway，可以把多个聊天渠道（如 Wh
 
 ```text
 src/
-  index.ts                     # 插件入口，注册 28 tools + 5 commands
+  index.ts                     # 插件入口，注册 32 tools + 5 commands
   tools/                       # 各类会议工具实现
   commands/                    # slash 命令实现
   modules/meeting/storage.ts   # 持久化与索引
@@ -218,6 +222,7 @@ MEETING_STORAGE_DIR=D:/tmp/meeting-data
 ```text
 meeting_create
   -> agenda_add_item（可多次）
+  -> agenda_confirm（用户确认并可修改后执行）
   -> meeting_start
   -> speaking_request / speaking_grant / speaking_release
   -> recording_take_note

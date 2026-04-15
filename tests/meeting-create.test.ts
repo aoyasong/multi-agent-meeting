@@ -1,12 +1,25 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMeetingCreateTool } from '../src/tools/meeting-create.js';
 import { createMockApi } from './helpers/test-helpers.js';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 // Mock API
 const mockApi = createMockApi();
+const TEST_STORAGE_DIR = path.join(os.tmpdir(), 'meeting-create-test-' + Date.now());
 
 describe('meeting_create tool', () => {
   const tool = createMeetingCreateTool(mockApi);
+
+  beforeEach(() => {
+    process.env.MEETING_STORAGE_DIR = TEST_STORAGE_DIR;
+  });
+
+  afterEach(async () => {
+    delete process.env.MEETING_STORAGE_DIR;
+    await fs.rm(TEST_STORAGE_DIR, { recursive: true, force: true });
+  });
 
   it('should have correct name', () => {
     expect(tool.name).toBe('meeting_create');

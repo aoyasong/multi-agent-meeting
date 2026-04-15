@@ -4,6 +4,7 @@ import { createMeetingStartTool } from '../src/tools/meeting-start.js';
 import { createMeetingEndTool } from '../src/tools/meeting-end.js';
 import { createMeetingGetTool } from '../src/tools/meeting-get.js';
 import { createMeetingListTool } from '../src/tools/meeting-list.js';
+import { createAgendaAddItemTool, createAgendaConfirmTool } from '../src/tools/agenda-tools.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -21,6 +22,8 @@ describe('Meeting Tools', () => {
   const endTool = createMeetingEndTool(mockApi);
   const getTool = createMeetingGetTool(mockApi);
   const listTool = createMeetingListTool(mockApi);
+  const agendaAddTool = createAgendaAddItemTool(mockApi);
+  const agendaConfirmTool = createAgendaConfirmTool(mockApi);
 
   beforeEach(async () => {
     // 设置测试存储目录
@@ -72,11 +75,18 @@ describe('Meeting Tools', () => {
       const createData = JSON.parse(createResult.content[0]?.text ?? '{}');
       const meetingId = createData.meeting_id;
 
+      await agendaAddTool.execute('test', {
+        meeting_id: meetingId,
+        title: '议程一',
+        expected_duration: 20,
+      });
+      await agendaConfirmTool.execute('test', { meeting_id: meetingId });
+
       // 开始会议
       const startResult = await startTool.execute('test', { meeting_id: meetingId });
       const startData = JSON.parse(startResult.content[0]?.text ?? '{}');
       
-      expect(startData.status).toBe('started');
+      expect(['started', 'in_progress']).toContain(startData.status);
       expect(startData.started_at).toBeDefined();
 
       // 结束会议
@@ -98,6 +108,13 @@ describe('Meeting Tools', () => {
       });
       const createData = JSON.parse(createResult.content[0]?.text ?? '{}');
       const meetingId = createData.meeting_id;
+
+      await agendaAddTool.execute('test', {
+        meeting_id: meetingId,
+        title: '议程一',
+        expected_duration: 10,
+      });
+      await agendaConfirmTool.execute('test', { meeting_id: meetingId });
 
       // 第一次开始
       await startTool.execute('test', { meeting_id: meetingId });

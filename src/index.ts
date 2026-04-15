@@ -17,8 +17,12 @@ import { createMeetingListTool } from "./tools/meeting-list.js";
 // 议程管理工具
 import {
   createAgendaAddItemTool,
+  createAgendaConfirmTool,
   createAgendaListItemsTool,
   createAgendaNextItemTool,
+  createAgendaRemoveItemTool,
+  createAgendaReorderItemsTool,
+  createAgendaUpdateItemTool,
 } from "./tools/agenda-tools.js";
 
 // 发言协调工具
@@ -84,8 +88,12 @@ export default definePluginEntry({
     registerTool(createMeetingGetTool(api));
     registerTool(createMeetingListTool(api));
 
-    // 议程管理工具 (3)
+    // 议程管理工具 (7)
     registerTool(createAgendaAddItemTool(api));
+    registerTool(createAgendaUpdateItemTool(api));
+    registerTool(createAgendaRemoveItemTool(api));
+    registerTool(createAgendaReorderItemsTool(api));
+    registerTool(createAgendaConfirmTool(api));
     registerTool(createAgendaListItemsTool(api));
     registerTool(createAgendaNextItemTool(api));
 
@@ -125,7 +133,7 @@ export default definePluginEntry({
       api.registerCommand(command);
     }
 
-    api.logger.info("Meeting plugin registered with 28 tools and 5 commands");
+    api.logger.info("Meeting plugin registered with 32 tools and 5 commands");
   },
 });
 

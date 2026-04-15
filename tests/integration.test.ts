@@ -8,7 +8,7 @@ import { createMeetingCreateTool } from '../src/tools/meeting-create.js';
 import { createMeetingStartTool } from '../src/tools/meeting-start.js';
 import { createMeetingEndTool } from '../src/tools/meeting-end.js';
 import { createMeetingGetTool } from '../src/tools/meeting-get.js';
-import { createAgendaAddItemTool } from '../src/tools/agenda-tools.js';
+import { createAgendaAddItemTool, createAgendaConfirmTool } from '../src/tools/agenda-tools.js';
 import { createSpeakingRequestTool, createSpeakingGrantTool, createSpeakingReleaseTool } from '../src/tools/speaking-tools.js';
 import { createVotingCreateTool, createVotingCastTool, createVotingEndTool } from '../src/tools/voting-tools.js';
 import { createRecordingTakeNoteTool } from '../src/tools/recording-tools.js';
@@ -29,6 +29,7 @@ describe('Integration: Full Meeting Flow', () => {
   const endTool = createMeetingEndTool(mockApi);
   const getTool = createMeetingGetTool(mockApi);
   const agendaAddTool = createAgendaAddItemTool(mockApi);
+  const agendaConfirmTool = createAgendaConfirmTool(mockApi);
   const speakingRequestTool = createSpeakingRequestTool(mockApi);
   const speakingGrantTool = createSpeakingGrantTool(mockApi);
   const speakingReleaseTool = createSpeakingReleaseTool(mockApi);
@@ -96,6 +97,11 @@ describe('Integration: Full Meeting Flow', () => {
     expect(JSON.parse(agenda3Result.content[0]?.text ?? '{}').agenda_item_id).toBeDefined();
     
     console.log('[Step 2] Agenda items added');
+
+    // 2.1 确认议程
+    const confirmAgendaResult = await agendaConfirmTool.execute('test', { meeting_id: meetingId });
+    const confirmAgendaData = JSON.parse(confirmAgendaResult.content[0]?.text ?? '{}');
+    expect(confirmAgendaData.agenda_confirmed).toBe(true);
 
     // 3. 开始会议
     const startResult = await startTool.execute('test', { meeting_id: meetingId });
@@ -283,6 +289,8 @@ describe('Integration: Full Meeting Flow', () => {
         expected_duration: 15,
       });
     }
+
+    await agendaConfirmTool.execute('test', { meeting_id: meetingId });
 
     // 开始会议
     await startTool.execute('test', { meeting_id: meetingId });

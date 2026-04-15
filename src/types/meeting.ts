@@ -93,6 +93,10 @@ export interface MeetingMetadata {
   session_id: string;
   /** 用户ID */
   user_id: string;
+  /** 议程是否已确认（确认后才允许开始会议） */
+  agenda_confirmed: boolean;
+  /** 议程确认时间 */
+  agenda_confirmed_at?: string;
   /** 关联材料 */
   materials?: string[];
   /** 标签 */

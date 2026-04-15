@@ -46,8 +46,6 @@ export interface AgendaItem {
   time_limit?: number;
   /** 关联材料 */
   materials?: string[];
-  /** 负责人（指定发言的Agent） */
-  owner?: string;
   /** 时间信息 */
   timing: AgendaItemTiming;
 }

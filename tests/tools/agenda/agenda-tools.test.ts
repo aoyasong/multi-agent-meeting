@@ -4,8 +4,12 @@ import * as fs from 'fs/promises';
 import { loadMeeting, saveMeeting } from '../../../src/modules/meeting/storage.js';
 import {
   createAgendaAddItemTool,
+  createAgendaConfirmTool,
   createAgendaListItemsTool,
   createAgendaNextItemTool,
+  createAgendaRemoveItemTool,
+  createAgendaReorderItemsTool,
+  createAgendaUpdateItemTool,
 } from '../../../src/tools/agenda-tools.js';
 import { createMeetingFixture, createMockApi, createTestStorageDir, parseToolResult } from '../../helpers/test-helpers.js';
 
@@ -29,7 +33,7 @@ describe('Agenda tools', () => {
     await fs.rm(storageDir, { recursive: true, force: true });
   });
 
-  it('should add agenda items with full optional fields and list them', async () => {
+  it('should add agenda items with optional fields and list them', async () => {
     const api = createMockApi();
     const addTool = createAgendaAddItemTool(api);
     const listTool = createAgendaListItemsTool(api);
@@ -42,7 +46,6 @@ describe('Agenda tools', () => {
         expected_duration: 20,
         time_limit: 25,
         materials: ['prd', 'design'],
-        owner: 'host-agent',
       })
     );
 
@@ -57,9 +60,9 @@ describe('Agenda tools', () => {
         description?: string;
         expected_duration: number;
         status: string;
-        owner?: string;
       }>;
       current_index: number;
+      agenda_confirmed: boolean;
     }>(await listTool.execute('test', { meeting_id: meetingId }));
 
     expect(listed.current_index).toBe(0);
@@ -68,11 +71,67 @@ describe('Agenda tools', () => {
     expect(listed.agenda_items[0]?.description).toBe('评审用户中心架构');
     expect(listed.agenda_items[0]?.expected_duration).toBe(20);
     expect(listed.agenda_items[0]?.status).toBe('pending');
-    expect(listed.agenda_items[0]?.owner).toBe('host-agent');
+    expect(listed.agenda_confirmed).toBe(false);
 
     const meeting = await loadMeeting(meetingId);
     expect(meeting.agenda[0]?.materials).toEqual(['prd', 'design']);
     expect(meeting.agenda[0]?.time_limit).toBe(25);
+  });
+
+  it('should update, reorder, confirm and remove agenda items', async () => {
+    const api = createMockApi();
+    const addTool = createAgendaAddItemTool(api);
+    const updateTool = createAgendaUpdateItemTool(api);
+    const reorderTool = createAgendaReorderItemsTool(api);
+    const confirmTool = createAgendaConfirmTool(api);
+    const removeTool = createAgendaRemoveItemTool(api);
+
+    const first = parseToolResult<{ agenda_item_id: string }>(await addTool.execute('test', {
+      meeting_id: meetingId,
+      title: '议程一',
+      expected_duration: 10,
+    }));
+    const second = parseToolResult<{ agenda_item_id: string }>(await addTool.execute('test', {
+      meeting_id: meetingId,
+      title: '议程二',
+      expected_duration: 20,
+    }));
+
+    const updated = parseToolResult<{ agenda_item_id: string; updated: boolean }>(
+      await updateTool.execute('test', {
+        meeting_id: meetingId,
+        agenda_item_id: first.agenda_item_id,
+        description: '更新后的描述',
+        expected_duration: 15,
+      })
+    );
+    expect(updated.updated).toBe(true);
+
+    const reordered = parseToolResult<{ reordered: boolean; agenda_order: Array<{ id: string }> }>(
+      await reorderTool.execute('test', {
+        meeting_id: meetingId,
+        ordered_agenda_item_ids: [second.agenda_item_id, first.agenda_item_id],
+      })
+    );
+    expect(reordered.reordered).toBe(true);
+    expect(reordered.agenda_order[0]?.id).toBe(second.agenda_item_id);
+
+    const confirmed = parseToolResult<{ agenda_confirmed: boolean }>(
+      await confirmTool.execute('test', { meeting_id: meetingId })
+    );
+    expect(confirmed.agenda_confirmed).toBe(true);
+
+    const removed = parseToolResult<{ remaining: number; removed_agenda_item_id: string }>(
+      await removeTool.execute('test', {
+        meeting_id: meetingId,
+        agenda_item_id: second.agenda_item_id,
+      })
+    );
+    expect(removed.removed_agenda_item_id).toBe(second.agenda_item_id);
+    expect(removed.remaining).toBe(1);
+
+    const meeting = await loadMeeting(meetingId);
+    expect(meeting.metadata.agenda_confirmed).toBe(false);
   });
 
   it('should switch to next agenda item and complete the previous one', async () => {

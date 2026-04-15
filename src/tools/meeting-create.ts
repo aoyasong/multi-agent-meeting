@@ -95,6 +95,7 @@ export function createMeetingCreateTool(_api: OpenClawPluginApi) {
         const metadata: MeetingMetadata = {
           session_id: '', // 将在 start 时创建
           user_id: '', // 从api获取
+          agenda_confirmed: false,
         };
         if (materials) {
           metadata.materials = materials;

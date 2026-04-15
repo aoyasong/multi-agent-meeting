@@ -20,7 +20,6 @@ export const AgendaAddItemToolSchema = Type.Object({
   expected_duration: Type.Number({ description: '预计时长（分钟）', minimum: 1 }),
   time_limit: Type.Optional(Type.Number({ description: '时间限制（分钟）' })),
   materials: Type.Optional(Type.Array(Type.String(), { description: '关联材料' })),
-  owner: Type.Optional(Type.String({ description: '负责人Agent ID' })),
 }, { additionalProperties: false });
 
 export function createAgendaAddItemTool(_api: OpenClawPluginApi) {
@@ -45,8 +44,10 @@ export function createAgendaAddItemTool(_api: OpenClawPluginApi) {
         if (rawParams.description) newItem.description = rawParams.description as string;
         if (rawParams.time_limit) newItem.time_limit = rawParams.time_limit as number;
         if (rawParams.materials) newItem.materials = rawParams.materials as string[];
-        if (rawParams.owner) newItem.owner = rawParams.owner as string;
-        
+
+        // 议程有变动后，必须重新确认才能开始会议
+        meeting.metadata.agenda_confirmed = false;
+        meeting.metadata.agenda_confirmed_at = undefined;
         meeting.agenda.push(newItem);
         await saveMeeting(meeting);
         
@@ -86,11 +87,12 @@ export function createAgendaListItemsTool(_api: OpenClawPluginApi) {
             description: item.description,
             expected_duration: item.expected_duration,
             status: item.status,
-            owner: item.owner,
             started_at: item.timing.started_at,
             ended_at: item.timing.ended_at,
           })),
           current_index: meeting.current_agenda_index,
+          agenda_confirmed: meeting.metadata.agenda_confirmed,
+          agenda_confirmed_at: meeting.metadata.agenda_confirmed_at,
         });
         
       } catch (error) {
@@ -163,6 +165,208 @@ export function createAgendaNextItemTool(_api: OpenClawPluginApi) {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         return jsonResult({ error: true, message: `Failed to switch agenda: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_update_item ====================
+
+export const AgendaUpdateItemToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+  agenda_item_id: Type.String({ description: '议程项ID' }),
+  title: Type.Optional(Type.String({ description: '议题标题' })),
+  description: Type.Optional(Type.String({ description: '议题描述' })),
+  expected_duration: Type.Optional(Type.Number({ description: '预计时长（分钟）', minimum: 1 })),
+  time_limit: Type.Optional(Type.Number({ description: '时间限制（分钟）', minimum: 1 })),
+  materials: Type.Optional(Type.Array(Type.String(), { description: '关联材料' })),
+}, { additionalProperties: false });
+
+export function createAgendaUpdateItemTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_update_item',
+    label: 'Agenda Update Item',
+    description: '更新指定议程项内容',
+    parameters: AgendaUpdateItemToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const agendaItemId = rawParams.agenda_item_id as string;
+        const meeting = await loadMeeting(meetingId);
+        const item = meeting.agenda.find(a => a.id === agendaItemId);
+
+        if (!item) {
+          return jsonResult({ error: true, message: `Agenda item not found: ${agendaItemId}` });
+        }
+
+        if (rawParams.title !== undefined) item.title = rawParams.title as string;
+        if (rawParams.description !== undefined) item.description = rawParams.description as string;
+        if (rawParams.expected_duration !== undefined) item.expected_duration = rawParams.expected_duration as number;
+        if (rawParams.time_limit !== undefined) item.time_limit = rawParams.time_limit as number;
+        if (rawParams.materials !== undefined) item.materials = rawParams.materials as string[];
+
+        meeting.metadata.agenda_confirmed = false;
+        meeting.metadata.agenda_confirmed_at = undefined;
+        await saveMeeting(meeting);
+
+        return jsonResult({
+          agenda_item_id: item.id,
+          updated: true,
+          agenda_confirmed: meeting.metadata.agenda_confirmed,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to update agenda item: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_remove_item ====================
+
+export const AgendaRemoveItemToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+  agenda_item_id: Type.String({ description: '议程项ID' }),
+}, { additionalProperties: false });
+
+export function createAgendaRemoveItemTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_remove_item',
+    label: 'Agenda Remove Item',
+    description: '删除指定议程项',
+    parameters: AgendaRemoveItemToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const agendaItemId = rawParams.agenda_item_id as string;
+        const meeting = await loadMeeting(meetingId);
+
+        const index = meeting.agenda.findIndex(a => a.id === agendaItemId);
+        if (index < 0) {
+          return jsonResult({ error: true, message: `Agenda item not found: ${agendaItemId}` });
+        }
+
+        const removed = meeting.agenda.splice(index, 1)[0];
+        if (meeting.current_agenda_index >= meeting.agenda.length) {
+          meeting.current_agenda_index = Math.max(0, meeting.agenda.length - 1);
+        }
+
+        meeting.metadata.agenda_confirmed = false;
+        meeting.metadata.agenda_confirmed_at = undefined;
+        await saveMeeting(meeting);
+
+        return jsonResult({
+          removed_agenda_item_id: removed.id,
+          removed_title: removed.title,
+          remaining: meeting.agenda.length,
+          agenda_confirmed: meeting.metadata.agenda_confirmed,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to remove agenda item: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_reorder_items ====================
+
+export const AgendaReorderItemsToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+  ordered_agenda_item_ids: Type.Array(Type.String({ description: '议程项ID' }), {
+    description: '重排后的议程项ID顺序',
+    minItems: 1,
+  }),
+}, { additionalProperties: false });
+
+export function createAgendaReorderItemsTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_reorder_items',
+    label: 'Agenda Reorder Items',
+    description: '按指定顺序重排议程项',
+    parameters: AgendaReorderItemsToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const orderedIds = rawParams.ordered_agenda_item_ids as string[];
+        const meeting = await loadMeeting(meetingId);
+
+        if (orderedIds.length !== meeting.agenda.length) {
+          return jsonResult({
+            error: true,
+            message: 'ordered_agenda_item_ids length must equal agenda length',
+          });
+        }
+
+        const map = new Map(meeting.agenda.map(item => [item.id, item] as const));
+        const reordered: AgendaItem[] = [];
+
+        for (const id of orderedIds) {
+          const item = map.get(id);
+          if (!item) {
+            return jsonResult({ error: true, message: `Invalid agenda item id in order: ${id}` });
+          }
+          reordered.push(item);
+        }
+
+        meeting.agenda = reordered;
+        meeting.current_agenda_index = 0;
+        meeting.metadata.agenda_confirmed = false;
+        meeting.metadata.agenda_confirmed_at = undefined;
+        await saveMeeting(meeting);
+
+        return jsonResult({
+          reordered: true,
+          agenda_order: meeting.agenda.map(item => ({ id: item.id, title: item.title })),
+          agenda_confirmed: meeting.metadata.agenda_confirmed,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to reorder agenda items: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_confirm ====================
+
+export const AgendaConfirmToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+}, { additionalProperties: false });
+
+export function createAgendaConfirmTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_confirm',
+    label: 'Agenda Confirm',
+    description: '确认当前议程，确认后才允许会议开始',
+    parameters: AgendaConfirmToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const meeting = await loadMeeting(meetingId);
+
+        if (meeting.agenda.length === 0) {
+          return jsonResult({
+            error: true,
+            message: 'Cannot confirm empty agenda',
+            meeting_id: meetingId,
+          });
+        }
+
+        const now = new Date().toISOString();
+        meeting.metadata.agenda_confirmed = true;
+        meeting.metadata.agenda_confirmed_at = now;
+        await saveMeeting(meeting);
+
+        return jsonResult({
+          meeting_id: meetingId,
+          agenda_confirmed: true,
+          agenda_confirmed_at: now,
+          agenda_count: meeting.agenda.length,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to confirm agenda: ${message}` });
       }
     },
   };

@@ -49,7 +49,7 @@ describe('Runtime load smoke (dist)', () => {
 
     pluginEntry.register(api);
 
-    expect(registerTool).toHaveBeenCalledTimes(28);
+    expect(registerTool).toHaveBeenCalledTimes(32);
     expect(registerCommand).toHaveBeenCalledTimes(5);
   });
 

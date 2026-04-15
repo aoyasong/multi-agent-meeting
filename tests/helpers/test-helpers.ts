@@ -65,6 +65,7 @@ export function createMeetingFixture(overrides?: Partial<Meeting>): Meeting {
     metadata: {
       session_id: 'session_fixture_001',
       user_id: 'user_fixture_001',
+      agenda_confirmed: false,
     },
     ...overrides,
   };

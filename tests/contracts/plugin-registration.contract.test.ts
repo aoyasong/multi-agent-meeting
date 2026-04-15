@@ -4,7 +4,7 @@ import pluginEntry from '../../src/index.js';
 import { createMockApi } from '../helpers/test-helpers.js';
 
 describe('Plugin registration contract', () => {
-  it('should expose a valid plugin entry and register 28 tools', () => {
+  it('should expose a valid plugin entry and register 32 tools', () => {
     const registerTool = vi.fn();
     const registerCommand = vi.fn();
     const loggerInfo = vi.fn();
@@ -25,7 +25,7 @@ describe('Plugin registration contract', () => {
 
     pluginEntry.register(api);
 
-    expect(registerTool).toHaveBeenCalledTimes(28);
+    expect(registerTool).toHaveBeenCalledTimes(32);
 
     const registeredTools = registerTool.mock.calls.map(call => call[0]);
     for (const tool of registeredTools) {
@@ -38,6 +38,6 @@ describe('Plugin registration contract', () => {
 
     expect(registerCommand).toHaveBeenCalledTimes(5);
 
-    expect(loggerInfo).toHaveBeenCalledWith('Meeting plugin registered with 28 tools and 5 commands');
+    expect(loggerInfo).toHaveBeenCalledWith('Meeting plugin registered with 32 tools and 5 commands');
   });
 });
