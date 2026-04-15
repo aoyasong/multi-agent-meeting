@@ -14,7 +14,6 @@ import { createMeetingStartTool } from "./tools/meeting-start.js";
 import { createMeetingEndTool } from "./tools/meeting-end.js";
 import { createMeetingGetTool } from "./tools/meeting-get.js";
 import { createMeetingListTool } from "./tools/meeting-list.js";
-import { createAgentListAvailableTool } from "./tools/agent-list-available.js";
 
 // 议程管理工具
 import {
@@ -130,16 +129,13 @@ export default definePluginEntry({
     registerTool(createMeetingListTasksTool(api));
     registerTool(createMeetingUpdateTaskStatusTool(api));
 
-    // Agent 发现工具 (1)
-    registerTool(createAgentListAvailableTool(api));
-
     // 注册自定义命令
     const commands = createMeetingCommands(api);
     for (const command of commands) {
       api.registerCommand(command);
     }
 
-    api.logger.info("Meeting plugin registered with 34 tools and 5 commands");
+    api.logger.info("Meeting plugin registered with 33 tools and 5 commands");
   },
 });
 

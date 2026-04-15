@@ -37,8 +37,7 @@
       "meeting_record_task_result",
       "meeting_get_task",
       "meeting_list_tasks",
-      "meeting_update_task_status",
-      "agent_list_available"
+      "meeting_update_task_status"
     ]
   },
   "configSchema": {

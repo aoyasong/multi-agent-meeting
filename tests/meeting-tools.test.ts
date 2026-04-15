@@ -6,7 +6,6 @@ import { createMeetingEndTool } from '../src/tools/meeting-end.js';
 import { createMeetingGetTool } from '../src/tools/meeting-get.js';
 import { createMeetingListTool } from '../src/tools/meeting-list.js';
 import { createAgendaAddItemTool, createAgendaConfirmTool } from '../src/tools/agenda-tools.js';
-import { createAgentListAvailableTool } from '../src/tools/agent-list-available.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -27,7 +26,6 @@ describe('Meeting Tools', () => {
   const listTool = createMeetingListTool(mockApi);
   const agendaAddTool = createAgendaAddItemTool(mockApi);
   const agendaConfirmTool = createAgendaConfirmTool(mockApi);
-  const agentListTool = createAgentListAvailableTool(mockApi);
 
   beforeEach(async () => {
     // 设置测试存储目录
@@ -184,7 +182,7 @@ describe('Meeting Tools', () => {
     });
   });
 
-  describe('readiness and agent discovery', () => {
+  describe('readiness checks', () => {
     it('should return readiness blockers before agenda confirmation', async () => {
       const createResult = await createTool.execute('test', {
         theme: '就绪性检查',
@@ -207,23 +205,5 @@ describe('Meeting Tools', () => {
       expect(readinessData.blockers.length).toBeGreaterThan(0);
     });
 
-    it('should return available agents from history', async () => {
-      await createTool.execute('test', {
-        theme: 'Agent来源测试',
-        purpose: '验证agent发现',
-        type: 'brainstorm',
-        expected_duration: 20,
-        participants: [
-          { agent_id: 'discovery-host', role: 'host' as const },
-          { agent_id: 'discovery-participant', role: 'participant' as const },
-        ],
-      });
-
-      const result = await agentListTool.execute('test', { include_history: true, limit: 10 });
-      const data = JSON.parse(result.content[0]?.text ?? '{}');
-      const ids = (data.agents ?? []).map((item: { agent_id: string }) => item.agent_id);
-      expect(ids).toContain('discovery-host');
-      expect(ids).toContain('discovery-participant');
-    });
   });
 });

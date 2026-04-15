@@ -33,6 +33,6 @@ describe('Release package smoke', () => {
 
     expect(manifest.id).toBe('multi-agent-meeting-plugin');
     expect(Array.isArray(manifest.contracts?.tools)).toBe(true);
-    expect((manifest.contracts?.tools ?? []).length).toBe(34);
+    expect((manifest.contracts?.tools ?? []).length).toBe(33);
   });
 });
