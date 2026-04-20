@@ -1,15 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 
-import { createMeetingFixture } from '../helpers/test-helpers.js';
+import { createMeetingFixture, createTestStorageDir } from '../helpers/test-helpers.js';
 
 describe('Restart reliability', () => {
   let storageDir: string;
 
   beforeEach(() => {
-    storageDir = path.join(os.tmpdir(), `meeting-restart-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    storageDir = createTestStorageDir('meeting-restart-test');
     process.env.MEETING_STORAGE_DIR = storageDir;
   });
 
@@ -47,7 +45,7 @@ describe('Restart reliability', () => {
     expect(list.meetings[0]?.status).toBe('in_progress');
   });
 
-  it('should return empty list when index file is removed after restart', async () => {
+  it('should keep list available after module reset without index file dependency', async () => {
     const storage = await import('../../src/modules/meeting/storage.js');
     const meeting = createMeetingFixture({
       id: 'meeting_restart_002',
@@ -55,16 +53,13 @@ describe('Restart reliability', () => {
     await storage.saveMeeting(meeting);
     await storage.updateMeetingIndex(meeting.id, meeting);
 
-    const indexPath = path.join(storageDir, 'index.json');
-    await fs.rm(indexPath, { force: true });
-
     vi.resetModules();
     const reloadedStorage = await import('../../src/modules/meeting/storage.js');
     const list = await reloadedStorage.listMeetings();
     const loadedMeeting = await reloadedStorage.loadMeeting('meeting_restart_002');
 
-    expect(list.total).toBe(0);
-    expect(list.meetings).toEqual([]);
+    expect(list.total).toBe(1);
+    expect(list.meetings[0]?.id).toBe('meeting_restart_002');
     expect(loadedMeeting.id).toBe('meeting_restart_002');
   });
 });

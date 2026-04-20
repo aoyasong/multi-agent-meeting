@@ -7,15 +7,13 @@ import { createMeetingGetTool } from '../src/tools/meeting-get.js';
 import { createMeetingListTool } from '../src/tools/meeting-list.js';
 import { createAgendaAddItemTool, createAgendaConfirmTool } from '../src/tools/agenda-tools.js';
 import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
-import { createMockApi } from './helpers/test-helpers.js';
+import { createMockApi, createTestStorageDir } from './helpers/test-helpers.js';
 
 // Mock API
 const mockApi = createMockApi();
 
 // 测试数据目录
-const TEST_STORAGE_DIR = path.join(os.tmpdir(), 'meeting-test-' + Date.now());
+const TEST_STORAGE_DIR = createTestStorageDir('meeting-test');
 
 describe('Meeting Tools', () => {
   const createTool = createMeetingCreateTool(mockApi);

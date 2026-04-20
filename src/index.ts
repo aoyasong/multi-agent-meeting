@@ -79,6 +79,14 @@ export default definePluginEntry({
     "多Agent协同会议系统，支持头脑风暴、需求评审、技术评审、项目启动等场景",
 
   register(api: OpenClawPluginApi) {
+    const runtimeConfig = (api.config as Record<string, unknown>) ?? {};
+    if (typeof runtimeConfig.pgDsn === "string" && runtimeConfig.pgDsn.length > 0) {
+      process.env.PG_DSN = runtimeConfig.pgDsn;
+    }
+    if (typeof runtimeConfig.storageDir === "string" && runtimeConfig.storageDir.length > 0) {
+      process.env.MEETING_STORAGE_DIR = runtimeConfig.storageDir;
+    }
+
     // 当前插件工具返回结构沿用既有实现；通过窄封装兼容 SDK 注册签名。
     const registerTool = (tool: unknown) => api.registerTool(tool as never);
 

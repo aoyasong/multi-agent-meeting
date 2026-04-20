@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 
 import {
   deleteMeeting,
-  getMeetingDir,
   listMeetings,
   loadMeeting,
   meetingExists,
@@ -23,7 +20,6 @@ describe('Meeting storage module', () => {
 
   afterEach(async () => {
     delete process.env.MEETING_STORAGE_DIR;
-    await fs.rm(storageDir, { recursive: true, force: true });
   });
 
   it('should save and load meeting metadata', async () => {
@@ -33,9 +29,6 @@ describe('Meeting storage module', () => {
     });
 
     await saveMeeting(meeting);
-
-    const filePath = path.join(getMeetingDir(meeting.id), 'metadata.json');
-    await expect(fs.access(filePath)).resolves.toBeUndefined();
 
     const loadedMeeting = await loadMeeting(meeting.id);
     expect(loadedMeeting.id).toBe(meeting.id);
@@ -54,7 +47,6 @@ describe('Meeting storage module', () => {
     await deleteMeeting(meeting.id);
 
     await expect(meetingExists(meeting.id)).resolves.toBe(false);
-    await expect(fs.access(getMeetingDir(meeting.id))).rejects.toBeDefined();
   });
 
   it('should throw a readable error when loading a missing meeting', async () => {
@@ -114,14 +106,14 @@ describe('Meeting storage module', () => {
     expect(pagedMeetings.meetings[0]?.id).toBe('meeting_storage_older');
   });
 
-  it('should return empty result when index does not exist', async () => {
+  it('should return empty result when no meeting exists in current namespace', async () => {
     const result = await listMeetings();
 
     expect(result.total).toBe(0);
     expect(result.meetings).toEqual([]);
   });
 
-  it('should keep metadata.json valid under concurrent writes', async () => {
+  it('should keep meeting readable under concurrent writes', async () => {
     const meeting = createMeetingFixture({
       id: 'meeting_storage_concurrent_write',
       theme: '并发写测试',
@@ -141,15 +133,11 @@ describe('Meeting storage module', () => {
       })
     );
 
-    const filePath = path.join(getMeetingDir(meeting.id), 'metadata.json');
-    const content = await fs.readFile(filePath, 'utf-8');
-    expect(() => JSON.parse(content)).not.toThrow();
-
     const loaded = await loadMeeting(meeting.id);
     expect(loaded.id).toBe(meeting.id);
   });
 
-  it('should keep index.json valid under concurrent index updates', async () => {
+  it('should keep list result valid under concurrent index updates', async () => {
     const items = Array.from({ length: 20 }, (_, i) =>
       createMeetingFixture({
         id: `meeting_index_concurrent_${i}`,

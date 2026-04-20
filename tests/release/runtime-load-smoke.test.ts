@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import * as url from 'url';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { createMockApi } from '../helpers/test-helpers.js';
+import { createMockApi, createTestStorageDir } from '../helpers/test-helpers.js';
 
 interface ToolDefinition {
   name: string;
@@ -21,7 +20,7 @@ describe('Runtime load smoke (dist)', () => {
   let storageDir: string;
 
   beforeEach(() => {
-    storageDir = path.join(os.tmpdir(), `meeting-runtime-smoke-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    storageDir = createTestStorageDir('meeting-runtime-smoke');
     process.env.MEETING_STORAGE_DIR = storageDir;
   });
 

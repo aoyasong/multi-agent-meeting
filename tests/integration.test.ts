@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 
 // 导入所有工具
 import { createMeetingCreateTool } from '../src/tools/meeting-create.js';
@@ -13,14 +12,14 @@ import { createSpeakingRequestTool, createSpeakingGrantTool, createSpeakingRelea
 import { createVotingCreateTool, createVotingCastTool, createVotingEndTool } from '../src/tools/voting-tools.js';
 import { createRecordingTakeNoteTool } from '../src/tools/recording-tools.js';
 import { createOutputGenerateSummaryTool, createOutputExportTool } from '../src/tools/output-tools.js';
-import { createMockApi } from './helpers/test-helpers.js';
+import { createMockApi, createTestStorageDir } from './helpers/test-helpers.js';
 
 
 // Mock API
 const mockApi = createMockApi();
 
 // 测试存储目录
-const TEST_STORAGE_DIR = path.join(os.tmpdir(), 'meeting-integration-test-' + Date.now());
+const TEST_STORAGE_DIR = createTestStorageDir('meeting-integration-test');
 
 describe('Integration: Full Meeting Flow', () => {
   // 工具实例

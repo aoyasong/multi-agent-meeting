@@ -4,131 +4,206 @@
  * @module modules/meeting/storage
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs/promises';
+import { Pool } from 'pg';
 import type { Meeting } from '../../types/index.js';
 
 /**
  * 默认存储目录
  */
-const DEFAULT_STORAGE_DIR = path.join(os.homedir(), '.openclaw', 'meetings');
-const fileMutexMap = new Map<string, Promise<void>>();
+const DEFAULT_EXPORT_DIR = path.join(os.homedir(), '.openclaw', 'meetings');
+let pgPool: Pool | null = null;
+let schemaInitPromise: Promise<void> | null = null;
+let isPgMemBackend = false;
 
-async function withFileMutex<T>(filePath: string, task: () => Promise<T>): Promise<T> {
-  const previous = fileMutexMap.get(filePath) ?? Promise.resolve();
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>(resolve => {
-    release = resolve;
-  });
-  fileMutexMap.set(filePath, previous.then(() => gate, () => gate));
-
-  await previous;
-  try {
-    return await task();
-  } finally {
-    release?.();
-  }
+function isTestEnv(): boolean {
+  return process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
 }
 
-async function atomicWriteFile(filePath: string, content: string): Promise<void> {
-  const randomPart = Math.random().toString(36).slice(2, 10);
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${randomPart}.tmp`;
-
-  try {
-    await fs.writeFile(tempPath, content, 'utf-8');
-    await fs.rename(tempPath, filePath);
-  } catch (error) {
-    try {
-      await fs.rm(tempPath, { force: true });
-    } catch {
-      // 忽略临时文件清理失败
-    }
-    throw error;
+async function getPool(): Promise<Pool> {
+  if (pgPool) {
+    return pgPool;
   }
+
+  const dsn = process.env.PG_DSN;
+  if (dsn) {
+    isPgMemBackend = false;
+    pgPool = new Pool({ connectionString: dsn });
+    return pgPool;
+  }
+
+  if (isTestEnv()) {
+    const testGlobal = globalThis as Record<string, unknown>;
+    const existing = testGlobal.__MEETING_PLUGIN_PG_POOL as Pool | undefined;
+    if (existing) {
+      pgPool = existing;
+      isPgMemBackend = true;
+      return pgPool;
+    }
+
+    const { newDb } = await import('pg-mem');
+    const db = newDb();
+    const adapter = db.adapters.createPg();
+    pgPool = new adapter.Pool() as unknown as Pool;
+    isPgMemBackend = true;
+    testGlobal.__MEETING_PLUGIN_PG_POOL = pgPool;
+    return pgPool;
+  }
+
+  throw new Error('PG_DSN is required: PostgreSQL storage backend is mandatory');
+}
+
+async function ensureSchema(): Promise<void> {
+  if (!schemaInitPromise) {
+    schemaInitPromise = (async () => {
+      const pool = await getPool();
+      if (isPgMemBackend) {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS meetings (
+            storage_ns TEXT,
+            id TEXT,
+            theme TEXT,
+            type TEXT,
+            status TEXT,
+            created_at TEXT,
+            started_at TEXT,
+            ended_at TEXT,
+            data JSON,
+            version INTEGER,
+            updated_at TEXT
+          );
+          CREATE INDEX IF NOT EXISTS idx_meetings_status_created_at
+            ON meetings(storage_ns, status, created_at DESC);
+        `);
+      } else {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS meetings (
+            storage_ns TEXT NOT NULL,
+            id TEXT NOT NULL,
+            theme TEXT NOT NULL,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            started_at TIMESTAMPTZ NULL,
+            ended_at TIMESTAMPTZ NULL,
+            data JSONB NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT meetings_storage_ns_id_pkey PRIMARY KEY (storage_ns, id)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_meetings_status_created_at
+            ON meetings(storage_ns, status, created_at DESC);
+        `);
+      }
+    })();
+  }
+  await schemaInitPromise;
 }
 
 /**
  * 获取存储目录路径
  */
-function getStorageDir(): string {
-  return process.env.MEETING_STORAGE_DIR || DEFAULT_STORAGE_DIR;
+function getExportDir(): string {
+  return process.env.MEETING_STORAGE_DIR || DEFAULT_EXPORT_DIR;
 }
 
-/**
- * 确保存储目录存在
- */
-async function ensureStorageDir(): Promise<void> {
-  const storageDir = getStorageDir();
-  await fs.mkdir(storageDir, { recursive: true });
+function getStorageNamespace(): string {
+  return process.env.MEETING_STORAGE_DIR || '__default__';
 }
 
 /**
  * 获取会议文件路径
  */
-function getMeetingFilePath(meetingId: string): string {
-  return path.join(getStorageDir(), meetingId, 'metadata.json');
-}
-
-/**
- * 获取会议目录路径
- */
 export function getMeetingDir(meetingId: string): string {
-  return path.join(getStorageDir(), meetingId);
+  return path.join(getExportDir(), meetingId);
 }
 
 /**
  * 保存会议
  */
 export async function saveMeeting(meeting: Meeting): Promise<void> {
-  await ensureStorageDir();
-  
-  const meetingDir = getMeetingDir(meeting.id);
-  await fs.mkdir(meetingDir, { recursive: true });
-  
-  const filePath = getMeetingFilePath(meeting.id);
-  await withFileMutex(filePath, async () => {
-    await atomicWriteFile(filePath, JSON.stringify(meeting, null, 2));
-  });
+  await ensureSchema();
+  await fs.mkdir(getMeetingDir(meeting.id), { recursive: true });
+  const pool = await getPool();
+  const values = [
+    getStorageNamespace(),
+    meeting.id,
+    meeting.theme,
+    meeting.type,
+    meeting.status,
+    meeting.timing.created_at,
+    meeting.timing.started_at ?? null,
+    meeting.timing.ended_at ?? null,
+    JSON.stringify(meeting),
+  ];
+
+  if (isPgMemBackend) {
+    await pool.query('DELETE FROM meetings WHERE storage_ns = $1 AND id = $2', values.slice(0, 2));
+    await pool.query(
+      `
+        INSERT INTO meetings (storage_ns, id, theme, type, status, created_at, started_at, ended_at, data, version, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $6)
+      `,
+      values
+    );
+    return;
+  }
+
+  await pool.query(
+    `
+      INSERT INTO meetings (storage_ns, id, theme, type, status, created_at, started_at, ended_at, data, version, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8::timestamptz, $9::jsonb, 1, NOW())
+      ON CONFLICT (storage_ns, id) DO UPDATE SET
+        theme = EXCLUDED.theme,
+        type = EXCLUDED.type,
+        status = EXCLUDED.status,
+        created_at = EXCLUDED.created_at,
+        started_at = EXCLUDED.started_at,
+        ended_at = EXCLUDED.ended_at,
+        data = EXCLUDED.data,
+        version = meetings.version + 1,
+        updated_at = NOW()
+    `,
+    values
+  );
 }
 
 /**
  * 加载会议
  */
 export async function loadMeeting(meetingId: string): Promise<Meeting> {
-  const filePath = getMeetingFilePath(meetingId);
-  
-  try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as Meeting;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Meeting not found: ${meetingId}`);
-    }
-    throw error;
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query<{ data: Meeting }>(
+    'SELECT data FROM meetings WHERE storage_ns = $1 AND id = $2',
+    [getStorageNamespace(), meetingId]
+  );
+  if (result.rowCount === 0) {
+    throw new Error(`Meeting not found: ${meetingId}`);
   }
+  return result.rows[0]!.data;
 }
 
 /**
  * 检查会议是否存在
  */
 export async function meetingExists(meetingId: string): Promise<boolean> {
-  const filePath = getMeetingFilePath(meetingId);
-  
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query('SELECT 1 FROM meetings WHERE storage_ns = $1 AND id = $2 LIMIT 1', [getStorageNamespace(), meetingId]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**
  * 删除会议
  */
 export async function deleteMeeting(meetingId: string): Promise<void> {
-  const meetingDir = getMeetingDir(meetingId);
-  await fs.rm(meetingDir, { recursive: true, force: true });
+  await ensureSchema();
+  const pool = await getPool();
+  await pool.query('DELETE FROM meetings WHERE storage_ns = $1 AND id = $2', [getStorageNamespace(), meetingId]);
 }
 
 /**
@@ -145,59 +220,14 @@ interface MeetingIndexItem {
 }
 
 /**
- * 获取索引文件路径
- */
-function getIndexPath(): string {
-  return path.join(getStorageDir(), 'index.json');
-}
-
-/**
  * 更新会议索引
  */
 export async function updateMeetingIndex(meetingId: string, meeting: Meeting): Promise<void> {
-  await ensureStorageDir();
-  
-  const indexPath = getIndexPath();
-  await withFileMutex(indexPath, async () => {
-    let index: MeetingIndexItem[] = [];
-    
-    try {
-      const content = await fs.readFile(indexPath, 'utf-8');
-      index = JSON.parse(content);
-    } catch {
-      // 索引文件不存在，使用空数组
-    }
-    
-    // 查找现有条目
-    const existingIndex = index.findIndex(item => item.id === meetingId);
-    
-    const indexItem: MeetingIndexItem = {
-      id: meeting.id,
-      theme: meeting.theme,
-      type: meeting.type,
-      status: meeting.status,
-      created_at: meeting.timing.created_at,
-    };
-    
-    // 可选字段只在有值时添加
-    if (meeting.timing.started_at) {
-      indexItem.started_at = meeting.timing.started_at;
-    }
-    if (meeting.timing.ended_at) {
-      indexItem.ended_at = meeting.timing.ended_at;
-    }
-    
-    if (existingIndex >= 0) {
-      index[existingIndex] = indexItem;
-    } else {
-      index.push(indexItem);
-    }
-    
-    // 按创建时间倒序排列
-    index.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    
-    await atomicWriteFile(indexPath, JSON.stringify(index, null, 2));
-  });
+  // PostgreSQL 后端下索引由 SQL 查询替代。这里保留兼容语义：调用时同步会议最新状态到数据库。
+  if (meetingId !== meeting.id) {
+    throw new Error(`Meeting id mismatch: ${meetingId} !== ${meeting.id}`);
+  }
+  await saveMeeting(meeting);
 }
 
 /**
@@ -208,29 +238,32 @@ export async function listMeetings(options?: {
   offset?: number;
   limit?: number;
 }): Promise<{ meetings: MeetingIndexItem[]; total: number }> {
-  const indexPath = getIndexPath();
-  let index: MeetingIndexItem[] = [];
-  
-  try {
-    const content = await fs.readFile(indexPath, 'utf-8');
-    index = JSON.parse(content);
-  } catch {
-    // 索引文件不存在，返回空
-    return { meetings: [], total: 0 };
-  }
-  
-  // 过滤状态
-  let filtered = index;
-  if (options?.status) {
-    filtered = index.filter(item => item.status === options.status);
-  }
-  
-  const total = filtered.length;
-  
-  // 分页
+  await ensureSchema();
+  const pool = await getPool();
+
   const offset = options?.offset ?? 0;
   const limit = options?.limit ?? 20;
-  const meetings = filtered.slice(offset, offset + limit);
-  
-  return { meetings, total };
+  const params: unknown[] = [];
+
+  let whereClause = `WHERE storage_ns = $${params.push(getStorageNamespace())}`;
+  if (options?.status) {
+    params.push(options.status);
+    whereClause += ` AND status = $${params.length}`;
+  }
+
+  const totalSql = `SELECT COUNT(*)::int AS total FROM meetings ${whereClause}`;
+  const totalResult = await pool.query<{ total: number }>(totalSql, params);
+  const total = totalResult.rows[0]?.total ?? 0;
+
+  params.push(limit, offset);
+  const meetingsSql = `
+    SELECT id, theme, type, status, created_at, started_at, ended_at
+    FROM meetings
+    ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT $${params.length - 1}
+    OFFSET $${params.length}
+  `;
+  const rows = await pool.query<MeetingIndexItem>(meetingsSql, params);
+  return { meetings: rows.rows, total };
 }

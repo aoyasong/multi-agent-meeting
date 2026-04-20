@@ -116,6 +116,11 @@ npm run build
 npm test
 ```
 
+Test temp directory notes:
+
+- Default test temp root is `D:/work/Temp` (to avoid writing into the C drive system temp).
+- You can override it with `TEST_TMP_ROOT`, for example: `TEST_TMP_ROOT=E:/ci-temp`.
+
 Optional:
 
 ```bash
@@ -165,7 +170,8 @@ Default config location: `~/.openclaw/openclaw.json`
       "multi-agent-meeting-plugin": {
         enabled: true,
         config: {
-          storageDir: "D:/openclaw/meetings",
+          pgDsn: "postgres://postgres:postgres@127.0.0.1:5432/openclaw_meeting",
+          storageDir: "D:/openclaw/meetings-exports",
           pollIntervalMs: 5000,
           agentTimeoutMs: 30000,
           votingWindows: {
@@ -182,7 +188,8 @@ Default config location: `~/.openclaw/openclaw.json`
 
 Schema constraints (from `openclaw.plugin.json`):
 
-- `storageDir`: string (default `~/.openclaw/meetings`)
+- `pgDsn`: string, PostgreSQL DSN (required)
+- `storageDir`: string for export files (default `~/.openclaw/meetings`)
 - `pollIntervalMs`: `1000 ~ 30000` (default `5000`)
 - `agentTimeoutMs`: `5000 ~ 120000` (default `30000`)
 - `votingWindows.simple`: default `180` seconds
@@ -191,17 +198,18 @@ Schema constraints (from `openclaw.plugin.json`):
 
 ## 7. Persistence
 
-Default storage directory: `~/.openclaw/meetings`
+Primary storage backend: PostgreSQL specified by `pgDsn`
 
-- Meeting metadata: `<storageDir>/<meetingId>/metadata.json`
-- Meeting index: `<storageDir>/index.json`
-- Summary file: `<storageDir>/<meetingId>/summary.json`
+- Meeting metadata, index and states: PostgreSQL table `meetings`
+- SQL bootstrap script: `docs/postgres-schema.sql`
+- Summary file: `<storageDir>/<meetingId>/summary.json` (export artifact)
 - Export outputs: `summary|transcript|actions.(json|markdown)`
 
 You can override storage in runtime with:
 
 ```bash
-MEETING_STORAGE_DIR=D:/tmp/meeting-data
+PG_DSN=postgres://postgres:postgres@127.0.0.1:5432/openclaw_meeting
+MEETING_STORAGE_DIR=D:/tmp/meeting-exports
 ```
 
 ## 8. Suggested Tool Flow

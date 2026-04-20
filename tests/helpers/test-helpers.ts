@@ -1,5 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { DEFAULT_MEETING_CONFIG } from '../../src/types/common.js';
@@ -75,7 +76,11 @@ export function createMeetingFixture(overrides?: Partial<Meeting>): Meeting {
  * 创建按测试文件隔离的临时存储目录。
  */
 export function createTestStorageDir(prefix: string): string {
-  return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const baseDir = process.env.TEST_TMP_ROOT || 'D:/work/Temp';
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
+  }
+  return path.join(baseDir, `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 }
 
 /**

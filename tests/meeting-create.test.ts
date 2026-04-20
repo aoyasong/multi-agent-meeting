@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMeetingCreateTool } from '../src/tools/meeting-create.js';
-import { createMockApi } from './helpers/test-helpers.js';
+import { createMockApi, createTestStorageDir } from './helpers/test-helpers.js';
 import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 
 // Mock API
 const mockApi = createMockApi();
-const TEST_STORAGE_DIR = path.join(os.tmpdir(), 'meeting-create-test-' + Date.now());
+const TEST_STORAGE_DIR = createTestStorageDir('meeting-create-test');
 
 describe('meeting_create tool', () => {
   const tool = createMeetingCreateTool(mockApi);

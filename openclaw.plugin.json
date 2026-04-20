@@ -43,10 +43,15 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
+    "required": ["pgDsn"],
     "properties": {
+      "pgDsn": {
+        "type": "string",
+        "description": "PostgreSQL 连接串，例如 postgres://user:pass@host:5432/db"
+      },
       "storageDir": {
         "type": "string",
-        "description": "会议数据存储目录，默认为 ~/.openclaw/meetings"
+        "description": "导出文件目录（summary/action items 等），默认为 ~/.openclaw/meetings"
       },
       "pollIntervalMs": {
         "type": "number",
@@ -87,9 +92,13 @@
     }
   },
   "uiHints": {
+    "pgDsn": {
+      "label": "PostgreSQL DSN",
+      "help": "插件主存储后端，必填"
+    },
     "storageDir": {
-      "label": "存储目录",
-      "help": "会议数据的存储位置"
+      "label": "导出目录",
+      "help": "会议导出文件（summary/action items）的存储位置"
     },
     "pollIntervalMs": {
       "label": "轮询间隔",
