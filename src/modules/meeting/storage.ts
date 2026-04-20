@@ -17,6 +17,24 @@ const DEFAULT_EXPORT_DIR = path.join(os.homedir(), '.openclaw', 'meetings');
 let pgPool: Pool | null = null;
 let schemaInitPromise: Promise<void> | null = null;
 let isPgMemBackend = false;
+let configuredPgDsn: string | undefined;
+let configuredExportDir: string | undefined;
+
+export function setStorageConfig(config: { pgDsn?: string; storageDir?: string }): void {
+  const normalizedDsn = config.pgDsn?.trim();
+  const normalizedStorageDir = config.storageDir?.trim();
+
+  if (normalizedDsn) {
+    configuredPgDsn = normalizedDsn;
+  }
+  if (normalizedStorageDir) {
+    configuredExportDir = normalizedStorageDir;
+  }
+}
+
+export function hasDatabaseConfig(): boolean {
+  return Boolean((configuredPgDsn && configuredPgDsn.length > 0) || process.env.PG_DSN);
+}
 
 function isTestEnv(): boolean {
   return process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
@@ -27,7 +45,7 @@ async function getPool(): Promise<Pool> {
     return pgPool;
   }
 
-  const dsn = process.env.PG_DSN;
+  const dsn = configuredPgDsn || process.env.PG_DSN;
   if (dsn) {
     isPgMemBackend = false;
     pgPool = new Pool({ connectionString: dsn });
@@ -107,11 +125,11 @@ async function ensureSchema(): Promise<void> {
  * 获取存储目录路径
  */
 function getExportDir(): string {
-  return process.env.MEETING_STORAGE_DIR || DEFAULT_EXPORT_DIR;
+  return configuredExportDir || process.env.MEETING_STORAGE_DIR || DEFAULT_EXPORT_DIR;
 }
 
 function getStorageNamespace(): string {
-  return process.env.MEETING_STORAGE_DIR || '__default__';
+  return configuredExportDir || process.env.MEETING_STORAGE_DIR || '__default__';
 }
 
 /**
