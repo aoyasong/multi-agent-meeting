@@ -104,7 +104,7 @@ export default definePluginEntry({
 
         const entries = obj.entries;
         if (isObject(entries)) {
-          const pluginEntry = entries["multi-agent-meeting-plugin"];
+          const pluginEntry = entries["multi-agent-meeting"];
           if (isObject(pluginEntry) && isObject(pluginEntry.config)) {
             const cfg = pluginEntry.config;
             if (typeof cfg.pgDsn === "string" || typeof cfg.storageDir === "string") {
@@ -115,7 +115,7 @@ export default definePluginEntry({
 
         const plugins = obj.plugins;
         if (isObject(plugins) && isObject(plugins.entries)) {
-          const pluginEntry = plugins.entries["multi-agent-meeting-plugin"];
+          const pluginEntry = plugins.entries["multi-agent-meeting"];
           if (isObject(pluginEntry) && isObject(pluginEntry.config)) {
             const cfg = pluginEntry.config;
             if (typeof cfg.pgDsn === "string" || typeof cfg.storageDir === "string") {
@@ -129,7 +129,7 @@ export default definePluginEntry({
       const candidates: unknown[] = [];
       if (typeof apiAny.getConfig === "function") {
         candidates.push(apiAny.getConfig());
-        candidates.push(apiAny.getConfig("multi-agent-meeting-plugin"));
+        candidates.push(apiAny.getConfig("multi-agent-meeting"));
       }
       candidates.push(apiAny.config);
 
