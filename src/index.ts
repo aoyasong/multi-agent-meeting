@@ -80,7 +80,23 @@ export default definePluginEntry({
     "多Agent协同会议系统，支持头脑风暴、需求评审、技术评审、项目启动等场景",
 
   register(api: OpenClawPluginApi) {
-    const runtimeConfig = (api.config as Record<string, unknown>) ?? {};
+    const resolveRuntimeConfig = (): Record<string, unknown> => {
+      const apiAny = api as unknown as {
+        config?: unknown;
+        getConfig?: () => unknown;
+      };
+      const fromGetConfig = typeof apiAny.getConfig === "function" ? apiAny.getConfig() : undefined;
+      const fromConfig = apiAny.config;
+      const merged = {
+        ...(fromConfig && typeof fromConfig === "object" ? (fromConfig as Record<string, unknown>) : {}),
+        ...(fromGetConfig && typeof fromGetConfig === "object"
+          ? (fromGetConfig as Record<string, unknown>)
+          : {}),
+      };
+      return merged;
+    };
+
+    const runtimeConfig = resolveRuntimeConfig();
     const pgDsn = typeof runtimeConfig.pgDsn === "string" ? runtimeConfig.pgDsn : undefined;
     const storageDir = typeof runtimeConfig.storageDir === "string" ? runtimeConfig.storageDir : undefined;
     setStorageConfig({ pgDsn, storageDir });

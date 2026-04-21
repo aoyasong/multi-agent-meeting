@@ -9,6 +9,9 @@ describe('Plugin registration contract', () => {
     const registerCommand = vi.fn();
     const loggerInfo = vi.fn();
     const api = createMockApi({
+      getConfig: () => ({
+        pgDsn: 'postgres://postgres:postgres@127.0.0.1:5432/openclaw_meeting',
+      }),
       registerTool,
       registerCommand,
       logger: {
