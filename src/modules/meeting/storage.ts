@@ -24,16 +24,13 @@ export function setStorageConfig(config: { pgDsn?: string; storageDir?: string }
   const normalizedDsn = config.pgDsn?.trim();
   const normalizedStorageDir = config.storageDir?.trim();
 
-  if (normalizedDsn) {
-    configuredPgDsn = normalizedDsn;
-  }
-  if (normalizedStorageDir) {
-    configuredExportDir = normalizedStorageDir;
-  }
+  configuredPgDsn = normalizedDsn && normalizedDsn.length > 0 ? normalizedDsn : undefined;
+  configuredExportDir =
+    normalizedStorageDir && normalizedStorageDir.length > 0 ? normalizedStorageDir : undefined;
 }
 
 export function hasDatabaseConfig(): boolean {
-  return Boolean((configuredPgDsn && configuredPgDsn.length > 0) || process.env.PG_DSN);
+  return Boolean((configuredPgDsn && configuredPgDsn.length > 0) || process.env.PG_DSN?.trim());
 }
 
 function isTestEnv(): boolean {

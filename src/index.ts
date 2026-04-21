@@ -85,9 +85,17 @@ export default definePluginEntry({
     const storageDir = typeof runtimeConfig.storageDir === "string" ? runtimeConfig.storageDir : undefined;
     setStorageConfig({ pgDsn, storageDir });
 
+    const hasPgDsnInConfig = Boolean(pgDsn && pgDsn.trim().length > 0);
+    const hasPgDsnInEnv = Boolean(process.env.PG_DSN && process.env.PG_DSN.trim().length > 0);
+    api.logger.info(
+      `Meeting plugin config check: hasPgDsnInConfig=${hasPgDsnInConfig}, hasPgDsnInEnv=${hasPgDsnInEnv}, hasStorageDirInConfig=${Boolean(storageDir && storageDir.trim().length > 0)}`
+    );
+
     if (!hasDatabaseConfig()) {
       throw new Error(
-        "PostgreSQL configuration missing: set plugin config `pgDsn` (recommended) or environment variable `PG_DSN`."
+        hasPgDsnInEnv
+          ? "PostgreSQL configuration missing in plugin runtime: PG_DSN exists but plugin cannot read effective pgDsn. Check plugin loading source and runtime config injection."
+          : "PostgreSQL configuration missing: set plugin config `pgDsn` (recommended) or environment variable `PG_DSN`."
       );
     }
 
