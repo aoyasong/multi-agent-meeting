@@ -104,7 +104,7 @@ export default definePluginEntry({
     const hasPgDsnInConfig = Boolean(pgDsn && pgDsn.trim().length > 0);
     const hasPgDsnInEnv = Boolean(process.env.PG_DSN && process.env.PG_DSN.trim().length > 0);
     api.logger.info(
-      `Meeting plugin config check: hasPgDsnInConfig=${hasPgDsnInConfig}, hasPgDsnInEnv=${hasPgDsnInEnv}, hasStorageDirInConfig=${Boolean(storageDir && storageDir.trim().length > 0)}`
+      `Meeting plugin config check: pgDsn=${pgDsn}, storageDir=${storageDir}, hasPgDsnInConfig=${hasPgDsnInConfig}, hasPgDsnInEnv=${hasPgDsnInEnv}, hasStorageDirInConfig=${Boolean(storageDir && storageDir.trim().length > 0)}`
     );
 
     if (!hasDatabaseConfig()) {
