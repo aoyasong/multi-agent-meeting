@@ -29,6 +29,10 @@ export const DEFAULT_VOTING_WINDOWS: VotingWindowConfig = {
  * 会议配置
  */
 export interface MeetingConfig {
+  /** PostgreSQL 连接串 */
+  pgDsn: string;
+  /** 导出文件目录 */
+  outputBaseDir: string;
   /** 轮询间隔（毫秒） */
   poll_interval_ms: number;
   /** Agent响应超时（毫秒） */
@@ -39,17 +43,25 @@ export interface MeetingConfig {
   allow_interrupt: boolean;
   /** 自动保存间隔（毫秒） */
   auto_save_interval_ms: number;
+  /** Agent响应超时（毫秒） */
+  agentResponseTimeoutMs: number;
+  /** 默认议题最大讨论轮次 */
+  defaultMaxDiscussionRounds: number;
 }
 
 /**
  * 默认会议配置
  */
 export const DEFAULT_MEETING_CONFIG: MeetingConfig = {
+  pgDsn: '',
+  outputBaseDir: '',
   poll_interval_ms: 5000,        // 5秒轮询
   agent_timeout_ms: 30000,       // 30秒超时
   voting_windows: DEFAULT_VOTING_WINDOWS,
   allow_interrupt: true,
   auto_save_interval_ms: 60000,  // 1分钟自动保存
+  agentResponseTimeoutMs: 60000, // 60秒Agent响应超时
+  defaultMaxDiscussionRounds: 3,  // 默认议题最大3轮讨论
 };
 
 /**

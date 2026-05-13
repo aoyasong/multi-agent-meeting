@@ -6,7 +6,8 @@
 
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { hasDatabaseConfig, setStorageConfig } from "./modules/meeting/storage.js";
+import { hasDatabaseConfig, setDbConfig } from "./modules/meeting/storage.js";
+import { hasOutputBaseDir, setOutputBaseDir, DEFAULT_EXPORT_DIR} from "./tools/output-tools.js";
 
 // 会议生命周期工具
 import { createMeetingCreateTool } from "./tools/meeting-create.js";
@@ -15,6 +16,7 @@ import { createMeetingStartTool } from "./tools/meeting-start.js";
 import { createMeetingEndTool } from "./tools/meeting-end.js";
 import { createMeetingGetTool } from "./tools/meeting-get.js";
 import { createMeetingListTool } from "./tools/meeting-list.js";
+import { DEFAULT_MEETING_CONFIG, type MeetingConfig } from "./types/common.js";
 
 // 议程管理工具
 import {
@@ -25,6 +27,9 @@ import {
   createAgendaRemoveItemTool,
   createAgendaReorderItemsTool,
   createAgendaUpdateItemTool,
+  createAgendaAttachTaskTool,
+  createParticipantConfirmReceivedTool,
+  createAgendaDashboardTool,
 } from "./tools/agenda-tools.js";
 
 // 发言协调工具
@@ -33,7 +38,31 @@ import {
   createSpeakingGrantTool,
   createSpeakingReleaseTool,
   createSpeakingStatusTool,
-} from "./tools/speaking-tools.js";
+} from './tools/speaking-tools.js';
+
+// 主持人主动调度工具
+import {
+  createSpeakingInviteTool,
+  createSpeakingRaiseQuestionTool,
+  createSpeakingPauseTopicTool,
+} from './tools/direct-speaking-tools.js';
+
+// 共识流程工具集
+import {
+  createConsensusProposeTool,
+  createConsensusCollectFeedbackTool,
+  createConsensusFinalizeTool,
+  createConsensusReopenTool,
+  createAgendaGetDiscussionProgressTool,
+  createAgendaEscalateToArbitrationTool,
+} from './tools/consensus-tools.js';
+
+// 跨Agent消息桥接工具
+import {
+  createCommunicationRelayMessageTool,
+  createCommunicationListUnresolvedQuestionsTool,
+  createAgendaGenerateContextSnapshotTool,
+} from './tools/communication-tools.js';
 
 // 投票决策工具
 import {
@@ -80,87 +109,25 @@ export default definePluginEntry({
     "多Agent协同会议系统，支持头脑风暴、需求评审、技术评审、项目启动等场景",
 
   register(api: OpenClawPluginApi) {
-    const resolveRuntimeConfig = (): Record<string, unknown> => {
-      const apiAny = api as unknown as {
-        config?: unknown;
-        getConfig?: (...args: unknown[]) => unknown;
-      };
-
-      const isObject = (v: unknown): v is Record<string, unknown> =>
-        Boolean(v) && typeof v === "object" && !Array.isArray(v);
-
-      const pickDirect = (obj: Record<string, unknown>): Record<string, unknown> | undefined => {
-        if (typeof obj.pgDsn === "string" || typeof obj.storageDir === "string") {
-          return obj;
-        }
-        return undefined;
-      };
-
-      const pickNested = (obj: Record<string, unknown>): Record<string, unknown> | undefined => {
-        const config = obj.config;
-        if (isObject(config) && (typeof config.pgDsn === "string" || typeof config.storageDir === "string")) {
-          return config;
-        }
-
-        const entries = obj.entries;
-        if (isObject(entries)) {
-          const pluginEntry = entries["multi-agent-meeting"];
-          if (isObject(pluginEntry) && isObject(pluginEntry.config)) {
-            const cfg = pluginEntry.config;
-            if (typeof cfg.pgDsn === "string" || typeof cfg.storageDir === "string") {
-              return cfg;
-            }
-          }
-        }
-
-        const plugins = obj.plugins;
-        if (isObject(plugins) && isObject(plugins.entries)) {
-          const pluginEntry = plugins.entries["multi-agent-meeting"];
-          if (isObject(pluginEntry) && isObject(pluginEntry.config)) {
-            const cfg = pluginEntry.config;
-            if (typeof cfg.pgDsn === "string" || typeof cfg.storageDir === "string") {
-              return cfg;
-            }
-          }
-        }
-        return undefined;
-      };
-
-      const candidates: unknown[] = [];
-      if (typeof apiAny.getConfig === "function") {
-        candidates.push(apiAny.getConfig());
-        candidates.push(apiAny.getConfig("multi-agent-meeting"));
-      }
-      candidates.push(apiAny.config);
-
-      for (const candidate of candidates) {
-        if (!isObject(candidate)) {
-          continue;
-        }
-        const picked = pickDirect(candidate) ?? pickNested(candidate);
-        if (picked) {
-          return picked;
-        }
-      }
-      return {};
-    };
-
-    const runtimeConfig = resolveRuntimeConfig();
-    const pgDsn = typeof runtimeConfig.pgDsn === "string" ? runtimeConfig.pgDsn : undefined;
-    const storageDir = typeof runtimeConfig.storageDir === "string" ? runtimeConfig.storageDir : undefined;
-    setStorageConfig({ pgDsn, storageDir });
-
-    const hasPgDsnInConfig = Boolean(pgDsn && pgDsn.trim().length > 0);
-    const hasPgDsnInEnv = Boolean(process.env.PG_DSN && process.env.PG_DSN.trim().length > 0);
-    api.logger.info(
-      `Meeting plugin config check: hasPgDsnInConfig=${hasPgDsnInConfig}, hasPgDsnInEnv=${hasPgDsnInEnv}, hasStorageDirInConfig=${Boolean(storageDir && storageDir.trim().length > 0)}`
-    );
+    const raw = api.pluginConfig && typeof api.pluginConfig === "object" ? (api.pluginConfig as any) : {};
+    const cfg: MeetingConfig = {...DEFAULT_MEETING_CONFIG, ...raw};
+    if (!raw) {
+      throw new Error("Meeting plugin config is not an object.");
+    }
+    const pgDsn = typeof cfg.pgDsn === "string" ? cfg.pgDsn : undefined;
+    setDbConfig({ pgDsn });
 
     if (!hasDatabaseConfig()) {
       throw new Error(
-        hasPgDsnInEnv
-          ? "PostgreSQL configuration missing in plugin runtime: PG_DSN exists but plugin cannot read effective pgDsn. Check plugin loading source and runtime config injection."
-          : "PostgreSQL configuration missing: set plugin config `pgDsn` (recommended) or environment variable `PG_DSN`."
+       "PostgreSQL configuration missing in plugin runtime: PG_DSN exists but plugin cannot read effective pgDsn. Check plugin loading source and runtime config injection."   
+      );
+    }
+
+    const outputBaseDir = typeof cfg.outputBaseDir === "string" ? cfg.outputBaseDir : DEFAULT_EXPORT_DIR;
+    setOutputBaseDir(outputBaseDir);
+    if (!hasOutputBaseDir()) {
+      throw new Error(
+        "Output base directory missing in plugin runtime: OUTPUT_BASE_DIR exists but plugin cannot read effective outputBaseDir. Check plugin loading source and runtime config injection."
       );
     }
 
@@ -175,7 +142,7 @@ export default definePluginEntry({
     registerTool(createMeetingGetTool(api));
     registerTool(createMeetingListTool(api));
 
-    // 议程管理工具 (7)
+    // 议程管理工具 (10)
     registerTool(createAgendaAddItemTool(api));
     registerTool(createAgendaUpdateItemTool(api));
     registerTool(createAgendaRemoveItemTool(api));
@@ -183,12 +150,33 @@ export default definePluginEntry({
     registerTool(createAgendaConfirmTool(api));
     registerTool(createAgendaListItemsTool(api));
     registerTool(createAgendaNextItemTool(api));
+    registerTool(createAgendaAttachTaskTool(api));
+    registerTool(createParticipantConfirmReceivedTool(api));
+    registerTool(createAgendaDashboardTool(api));
 
     // 发言协调工具 (4)
     registerTool(createSpeakingRequestTool(api));
     registerTool(createSpeakingGrantTool(api));
     registerTool(createSpeakingReleaseTool(api));
     registerTool(createSpeakingStatusTool(api));
+    
+    // 主持人主动调度工具 (3)
+    registerTool(createSpeakingInviteTool(api));
+    registerTool(createSpeakingRaiseQuestionTool(api));
+    registerTool(createSpeakingPauseTopicTool(api));
+
+    // 共识流程工具集 (6)
+    registerTool(createConsensusProposeTool(api));
+    registerTool(createConsensusCollectFeedbackTool(api));
+    registerTool(createConsensusFinalizeTool(api));
+    registerTool(createConsensusReopenTool(api));
+    registerTool(createAgendaGetDiscussionProgressTool(api));
+    registerTool(createAgendaEscalateToArbitrationTool(api));
+
+    // 跨Agent消息桥接工具 (3)
+    registerTool(createCommunicationRelayMessageTool(api));
+    registerTool(createCommunicationListUnresolvedQuestionsTool(api));
+    registerTool(createAgendaGenerateContextSnapshotTool(api));
 
     // 投票决策工具 (5)
     registerTool(createVotingCreateTool(api));

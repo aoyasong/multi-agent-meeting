@@ -2,7 +2,7 @@
   "id": "multi-agent-meeting",
   "name": "Multi Agent Meeting",
   "description": "多Agent协同会议系统，支持头脑风暴、需求评审、技术评审、项目启动等场景",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "contracts": {
     "tools": [
       "meeting_create",
@@ -22,6 +22,18 @@
       "speaking_grant",
       "speaking_release",
       "speaking_status",
+      "speaking_invite",
+      "speaking_raise_question",
+      "speaking_pause_topic",
+      "consensus_propose",
+      "consensus_collect_feedback",
+      "consensus_finalize",
+      "consensus_reopen",
+      "agenda_get_discussion_progress",
+      "agenda_escalate_to_arbitration",
+      "communication_relay_message",
+      "communication_list_unresolved_questions",
+      "agenda_generate_context_snapshot",
       "voting_create",
       "voting_cast",
       "voting_get_result",
@@ -49,7 +61,7 @@
         "type": "string",
         "description": "PostgreSQL 连接串，例如 postgres://user:pass@host:5432/db"
       },
-      "storageDir": {
+      "output_base_dir": {
         "type": "string",
         "description": "导出文件目录（summary/action items 等），默认为 ~/.openclaw/meetings"
       },

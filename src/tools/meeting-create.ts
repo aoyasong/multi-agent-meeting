@@ -99,6 +99,7 @@ export function createMeetingCreateTool(_api: OpenClawPluginApi) {
           role: p.role,
           status: 'invited' as ParticipantStatus,
           speaking_count: 0,
+          confirmed_received: false,
         }));
         
         // 构建会议实体
@@ -129,6 +130,9 @@ export function createMeetingCreateTool(_api: OpenClawPluginApi) {
           notes: [],
           voting_history: [],
           tasks: [],
+          speaking_state: {
+            queue: [],
+          },
           metadata,
         };
         

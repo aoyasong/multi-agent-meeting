@@ -3,19 +3,22 @@
  * 
  * @module tools/speaking-tools
  */
-
 import { Type } from '@sinclair/typebox';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { jsonResult } from '../utils/json-result.js';
 import { loadMeeting, saveMeeting } from '../modules/meeting/storage.js';
 import type { SpeakingQueueItem } from '../types/index.js';
 
-// 会议发言状态（运行时）
-const speakingState = new Map<string, {
-  currentSpeaker?: string;
-  queue: SpeakingQueueItem[];
-  grantedAt?: string;
-}>();
+function ensureSpeakingStateInitialized(meeting: { speaking_state?: { current_speaker?: string; queue: SpeakingQueueItem[]; granted_at?: string } }) {
+  if (!meeting.speaking_state) {
+    meeting.speaking_state = {
+      queue: [],
+    };
+  }
+  if (!meeting.speaking_state.queue) {
+    meeting.speaking_state.queue = [];
+  }
+}
 
 // ==================== speaking_request ====================
 
@@ -39,24 +42,21 @@ export function createSpeakingRequestTool(_api: OpenClawPluginApi) {
         const topic = rawParams.topic as string | undefined;
         const priority = (rawParams.priority as number) ?? 5;
 
-        // 获取或创建发言状态
-        let state = speakingState.get(meetingId);
-        if (!state) {
-          state = { queue: [] };
-          speakingState.set(meetingId, state);
-        }
+        const meeting = await loadMeeting(meetingId);
+        ensureSpeakingStateInitialized(meeting);
+        const state = meeting.speaking_state!;
 
-        // 检查是否已在队列中
         const existingIndex = state.queue.findIndex(q => q.agent_id === agentId);
         if (existingIndex >= 0) {
           return jsonResult({
             error: true,
             message: 'Agent already in queue',
             queue_position: existingIndex + 1,
+            current_speaker: state.current_speaker ?? null,
+            queue_length: state.queue.length,
           });
         }
 
-        // 添加到队列
         const queueItem: SpeakingQueueItem = {
           agent_id: agentId,
           requested_at: new Date().toISOString(),
@@ -64,17 +64,17 @@ export function createSpeakingRequestTool(_api: OpenClawPluginApi) {
           topic,
         };
         state.queue.push(queueItem);
-
-        // 按优先级排序
         state.queue.sort((a, b) => b.priority - a.priority);
 
+        await saveMeeting(meeting);
+
         const position = state.queue.findIndex(q => q.agent_id === agentId) + 1;
-        const estimatedWait = position * 30; // 预估每条发言30秒
+        const estimatedWait = position * 30;
 
         return jsonResult({
           queue_position: position,
           estimated_wait_seconds: estimatedWait,
-          current_speaker: state.currentSpeaker ?? null,
+          current_speaker: state.current_speaker ?? null,
           queue_length: state.queue.length,
         });
       } catch (error) {
@@ -103,17 +103,13 @@ export function createSpeakingGrantTool(_api: OpenClawPluginApi) {
         const meetingId = rawParams.meeting_id as string;
         const specifiedAgentId = rawParams.agent_id as string | undefined;
 
-        let state = speakingState.get(meetingId);
-        if (!state) {
-          state = { queue: [] };
-          speakingState.set(meetingId, state);
-        }
+        const meeting = await loadMeeting(meetingId);
+        ensureSpeakingStateInitialized(meeting);
+        const state = meeting.speaking_state!;
 
-        // 确定授予对象
         let targetAgentId: string | undefined;
         if (specifiedAgentId) {
           targetAgentId = specifiedAgentId;
-          // 从队列中移除
           state.queue = state.queue.filter(q => q.agent_id !== specifiedAgentId);
         } else if (state.queue.length > 0) {
           const nextItem = state.queue.shift();
@@ -127,13 +123,14 @@ export function createSpeakingGrantTool(_api: OpenClawPluginApi) {
           });
         }
 
-        // 授予发言
-        state.currentSpeaker = targetAgentId;
-        state.grantedAt = new Date().toISOString();
+        state.current_speaker = targetAgentId;
+        state.granted_at = new Date().toISOString();
+
+        await saveMeeting(meeting);
 
         return jsonResult({
           agent_id: targetAgentId,
-          granted_at: state.grantedAt,
+          granted_at: state.granted_at,
           queue_remaining: state.queue.length,
         });
       } catch (error) {
@@ -162,26 +159,27 @@ export function createSpeakingReleaseTool(_api: OpenClawPluginApi) {
         const meetingId = rawParams.meeting_id as string;
         const agentId = rawParams.agent_id as string;
 
-        const state = speakingState.get(meetingId);
-        if (!state || state.currentSpeaker !== agentId) {
+        const meeting = await loadMeeting(meetingId);
+        ensureSpeakingStateInitialized(meeting);
+        const state = meeting.speaking_state!;
+
+        if (!state.current_speaker || state.current_speaker !== agentId) {
           return jsonResult({
             error: true,
             message: 'Agent does not have speaking rights',
           });
         }
 
-        // 释放发言权
-        state.currentSpeaker = undefined;
-        state.grantedAt = undefined;
+        state.current_speaker = undefined;
+        state.granted_at = undefined;
 
-        // 更新会议参与者发言计数
-        const meeting = await loadMeeting(meetingId);
         const participant = meeting.participants.find(p => p.agent_id === agentId);
         if (participant) {
           participant.speaking_count++;
           participant.last_active_at = new Date().toISOString();
-          await saveMeeting(meeting);
         }
+
+        await saveMeeting(meeting);
 
         return jsonResult({
           released: true,
@@ -211,25 +209,19 @@ export function createSpeakingStatusTool(_api: OpenClawPluginApi) {
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       try {
         const meetingId = rawParams.meeting_id as string;
-        const state = speakingState.get(meetingId);
-
-        if (!state) {
-          return jsonResult({
-            current_speaker: null,
-            queue: [],
-            granted_at: null,
-          });
-        }
+        const meeting = await loadMeeting(meetingId);
+        ensureSpeakingStateInitialized(meeting);
+        const state = meeting.speaking_state!;
 
         return jsonResult({
-          current_speaker: state.currentSpeaker ?? null,
+          current_speaker: state.current_speaker ?? null,
           queue: state.queue.map(q => ({
             agent_id: q.agent_id,
             priority: q.priority,
             topic: q.topic,
             requested_at: q.requested_at,
           })),
-          granted_at: state.grantedAt ?? null,
+          granted_at: state.granted_at ?? null,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';

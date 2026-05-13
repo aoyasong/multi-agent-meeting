@@ -8,13 +8,33 @@ import { Type } from '@sinclair/typebox';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { jsonResult } from '../utils/json-result.js';
 import { generateId } from '../utils/id-generator.js';
-import { loadMeeting, getMeetingDir } from '../modules/meeting/storage.js';
+import { loadMeeting } from '../modules/meeting/storage.js';
 import type { MeetingSummary, AgendaSummary, Perspective, Decision, ActionItem } from '../types/index.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
+
+let outputBaseDir: string | null = null;
+export const DEFAULT_EXPORT_DIR = path.join(os.homedir(), '.openclaw', 'meetings');
+
+export function setOutputBaseDir(dir: string): void {
+  outputBaseDir = dir;
+}
+
+export function hasOutputBaseDir(): boolean {
+  return Boolean((outputBaseDir && outputBaseDir.length > 0) || process.env.OUTPUT_DIR?.trim());
+}
+
+export function getOutputDir(meetingId: string): string {
+  return path.join(outputBaseDir || DEFAULT_EXPORT_DIR, meetingId);
+}
+
+export async function createOutputDir(meetingId: string): Promise<void> {
+  const outputDir = getOutputDir(meetingId);
+  await fs.mkdir(outputDir, { recursive: true });
+}
 
 // ==================== output_generate_summary ====================
-
 export const OutputGenerateSummaryToolSchema = Type.Object({
   meeting_id: Type.String({ description: '会议ID' }),
 }, { additionalProperties: false });
@@ -104,7 +124,8 @@ export function createOutputGenerateSummaryTool(_api: OpenClawPluginApi) {
         };
 
         // 保存摘要
-        const summaryPath = path.join(getMeetingDir(meetingId), 'summary.json');
+        await createOutputDir(meetingId);
+        const summaryPath = path.join(getOutputDir(meetingId), 'summary.json');
         await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
 
         return jsonResult({
@@ -197,7 +218,7 @@ export function createOutputExportTool(_api: OpenClawPluginApi) {
         const targetPath = rawParams.target_path as string | undefined;
 
         const meeting = await loadMeeting(meetingId);
-        const meetingDir = targetPath || getMeetingDir(meetingId);
+        const meetingDir = targetPath || getOutputDir(meetingId);
         const files: Array<{ type: string; path: string }> = [];
 
         // 导出各类内容

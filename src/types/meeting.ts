@@ -65,6 +65,10 @@ export interface Participant {
   speaking_count: number;
   /** 最后活跃时间 */
   last_active_at?: string;
+  /** 是否已确认收到完整会议上下文（议程+所有资料），会前门禁使用 */
+  confirmed_received: boolean;
+  /** 确认收到的时间 */
+  confirmed_received_at?: string;
 }
 
 /**

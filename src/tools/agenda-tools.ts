@@ -38,7 +38,16 @@ export function createAgendaAddItemTool(_api: OpenClawPluginApi) {
           title: rawParams.title as string,
           expected_duration: rawParams.expected_duration as number,
           status: 'pending' as AgendaItemStatus,
+          task_ids: [],
           timing: {},
+          discussion_round: 0,
+          max_discussion_rounds: 3,
+          discussion_entries: [],
+          invited_agent_ids: [],
+          pending_agent_ids: [],
+          consensus_feedbacks: [],
+          unresolved_questions: [],
+          escalated_to_user: false,
         };
         
         if (rawParams.description) newItem.description = rawParams.description as string;
@@ -367,6 +376,169 @@ export function createAgendaConfirmTool(_api: OpenClawPluginApi) {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         return jsonResult({ error: true, message: `Failed to confirm agenda: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_attach_task ====================
+
+export const AgendaAttachTaskToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+  agenda_item_id: Type.String({ description: '议程项ID' }),
+  task_id: Type.String({ description: '要关联的任务ID' }),
+}, { additionalProperties: false });
+
+export function createAgendaAttachTaskTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_attach_task',
+    label: 'Agenda Attach Task',
+    description: '将已创建的任务绑定到指定议程项下，该议程完成条件关联该任务',
+    parameters: AgendaAttachTaskToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const agendaItemId = rawParams.agenda_item_id as string;
+        const taskId = rawParams.task_id as string;
+        const meeting = await loadMeeting(meetingId);
+
+        const agendaItem = meeting.agenda.find(a => a.id === agendaItemId);
+        if (!agendaItem) {
+          return jsonResult({ error: true, message: `Agenda item not found: ${agendaItemId}` });
+        }
+
+        const taskExists = meeting.tasks.some(t => t.id === taskId);
+        if (!taskExists) {
+          return jsonResult({ error: true, message: `Task not found in meeting: ${taskId}` });
+        }
+
+        if (!agendaItem.task_ids.includes(taskId)) {
+          agendaItem.task_ids.push(taskId);
+        }
+
+        await saveMeeting(meeting);
+        return jsonResult({
+          agenda_item_id: agendaItemId,
+          attached_task_id: taskId,
+          total_attached_tasks: agendaItem.task_ids.length,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to attach task to agenda: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== participant_confirm_received ====================
+
+export const ParticipantConfirmReceivedToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+  agent_id: Type.String({ description: '确认收到的Agent ID' }),
+}, { additionalProperties: false });
+
+export function createParticipantConfirmReceivedTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'participant_confirm_received',
+    label: 'Participant Confirm Received',
+    description: '参会Agent确认已完整收到会议上下文（议程+所有资料），会前门禁使用',
+    parameters: ParticipantConfirmReceivedToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const agentId = rawParams.agent_id as string;
+        const meeting = await loadMeeting(meetingId);
+
+        const participant = meeting.participants.find(p => p.agent_id === agentId);
+        if (!participant) {
+          return jsonResult({ error: true, message: `Participant not found: ${agentId}` });
+        }
+
+        const now = new Date().toISOString();
+        participant.confirmed_received = true;
+        participant.confirmed_received_at = now;
+
+        const allConfirmed = meeting.participants.every(p => p.confirmed_received);
+        const confirmedCount = meeting.participants.filter(p => p.confirmed_received).length;
+
+        await saveMeeting(meeting);
+        return jsonResult({
+          meeting_id: meetingId,
+          agent_id: agentId,
+          confirmed_received: true,
+          confirmed_at: now,
+          all_participants_confirmed: allConfirmed,
+          confirmed_count: confirmedCount,
+          total_participants: meeting.participants.length,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to confirm received: ${message}` });
+      }
+    },
+  };
+}
+
+// ==================== agenda_dashboard ====================
+
+export const AgendaDashboardToolSchema = Type.Object({
+  meeting_id: Type.String({ description: '会议ID' }),
+}, { additionalProperties: false });
+
+export function createAgendaDashboardTool(_api: OpenClawPluginApi) {
+  return {
+    name: 'agenda_dashboard',
+    label: 'Agenda Dashboard',
+    description: '主Agent全景仪表盘，返回当前会议、议程、所有关联任务的完整进度概览',
+    parameters: AgendaDashboardToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      try {
+        const meetingId = rawParams.meeting_id as string;
+        const meeting = await loadMeeting(meetingId);
+
+        const totalAgendas = meeting.agenda.length;
+        const completedAgendas = meeting.agenda.filter(a => a.status === 'completed' || a.status === 'agreed' || a.status === 'skipped').length;
+
+        const currentAgenda = meeting.agenda[meeting.current_agenda_index];
+        let currentAgendaStats = null;
+
+        if (currentAgenda) {
+          const currentTasks = meeting.tasks.filter(t => currentAgenda.task_ids.includes(t.id));
+          const totalTasks = currentTasks.length;
+          const completedTasks = currentTasks.filter(t => t.status === 'completed').length;
+          const pendingAgents = currentTasks.filter(t => t.status !== 'completed').map(t => t.assignee_agent_id);
+          currentAgendaStats = {
+            id: currentAgenda.id,
+            title: currentAgenda.title,
+            status: currentAgenda.status,
+            total_attached_tasks: totalTasks,
+            completed_tasks: completedTasks,
+            pending_agents: pendingAgents,
+            all_tasks_completed: totalTasks > 0 ? completedTasks === totalTasks : true,
+          };
+        }
+
+        const participantConfirmationStatus = meeting.participants.map(p => ({
+          agent_id: p.agent_id,
+          role: p.role,
+          confirmed_received: p.confirmed_received,
+          confirmed_at: p.confirmed_received_at,
+        }));
+
+        return jsonResult({
+          meeting_id: meetingId,
+          meeting_status: meeting.status,
+          total_agendas: totalAgendas,
+          completed_agendas: completedAgendas,
+          progress: totalAgendas > 0 ? `${completedAgendas}/${totalAgendas}` : '0/0',
+          current_agenda_index: meeting.current_agenda_index,
+          current_agenda: currentAgendaStats,
+          participant_confirmation_status: participantConfirmationStatus,
+          all_participants_confirmed: meeting.participants.every(p => p.confirmed_received),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return jsonResult({ error: true, message: `Failed to get dashboard: ${message}` });
       }
     },
   };

@@ -20,7 +20,13 @@ export type {
   AgendaItem,
   AgendaItemStatus,
   AgendaItemTiming,
+  DiscussionEntry,
+  ConsensusFeedback,
 } from './agenda.js';
+
+export type {
+  InterAgentMessage,
+} from './communication.js';
 
 export type {
   SpeakingRecord,
